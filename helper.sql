@@ -34,32 +34,6 @@ language plpgsql volatile
 drop aggregate if exists comma(text) cascade;
 create aggregate comma(text) ( sfunc=comma_aggregate,stype=text, initcond='' );
 
-create or replace function earliest_aggregate(data, data)
-returns data as
-$body$
-begin  
-	if $1.id<$2.id then return $1; end if;
-	return $2;
-end;
-$body$
-language plpgsql volatile
-;
-drop aggregate if exists earliest(data) cascade;
-create aggregate earliest(data) ( sfunc=earliest_aggregate,stype=data );
-
-create or replace function latest_aggregate(data, data)
-returns data as
-$body$
-begin  
-	if $1.id>$2.id then return $1; end if;
-	return $2;
-end;
-$body$
-language plpgsql volatile
-;
-drop aggregate if exists latest(data) cascade;
-create aggregate latest(data) ( sfunc=latest_aggregate,stype=data );
-
 create or replace function shortest_aggregate(text, text)
 returns text as
 $body$
