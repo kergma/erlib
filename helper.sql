@@ -64,4 +64,17 @@ language plpgsql volatile
 drop aggregate if exists longest(text) cascade;
 create aggregate longest(text) ( sfunc=longest_aggregate,stype=text );
 
+create or replace function array_agg_notnull_aggregator(a anyarray, b anyelement)
+returns anyarray language plpgsql immutable strict as $_$
+begin
+	if b is not null then
+		a=array_append(a,b);
+	end if;
+	return a;
+end;
+$_$;
+
+drop aggregate if exists array_agg_notnull(anyelement) cascade;
+create aggregate array_agg_notnull(anyelement) ( sfunc=array_agg_notnull_aggregator,stype=anyarray, initcond='{}');
+
 commit;
