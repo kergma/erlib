@@ -26,7 +26,7 @@ declare
 begin
 
 	select string_agg(format ('%I %s',u,type),', ') as columns from (
-	select u,case u when 'e2' then 'int8' when 't' then 'text' when 'n' then 'numeric' when 'i' then 'int' end as type from unnest(_value_columns) as u
+	select u,case u when 'e2' then 'int8' when 't' then 'text' when 'j' then 'json' when 'n' then 'numeric' when 'i' then 'int' end as type from unnest(_value_columns) as u
 	) u into r;
 
 	execute $$create table $$||_table||$$ (
