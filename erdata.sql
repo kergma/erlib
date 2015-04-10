@@ -18,25 +18,30 @@ $_$;
 
 select * from er.util_create_keys();
 
-create or replace function er.util_create_storage(_table text)
-returns text language plpgsql volatile as $_$
+create or replace function er.util_create_storage(_table text, _value_columns text[] default '{e2,t}')
+returns table(status text) language plpgsql volatile as $_$
+declare
+	r record;
+	c text;
 begin
+
+	select string_agg(format ('%I %s',u,type),', ') as columns from (
+	select u,case u when 'e2' then 'int8' when 't' then 'text' when 'n' then 'numeric' when 'i' then 'int' end as type from unnest(_value_columns) as u
+	) u into r;
+
 	execute $$create table $$||_table||$$ (
 		row serial,
 		e1 int8,
-		r int8 references er.keys(id),
-		e2 int8,
-		value text
+		r int8 references er.keys(id)
+		$$||format('%s',','||r.columns)||$$
 	)$$;
-	execute 'create index on '||_table||'(e1)';
-	execute 'create index on '||_table||'(r)';
-	execute 'create index on '||_table||'(e2)';
-	execute 'create index on '||_table||'(value)';
-
-	return 'ok';
+	return query select format('table %s created',_table);
+	foreach c in array '{e1,r}'||_value_columns loop
+		execute format('create index on %s(%s)',_table,c);
+		return query select format('index on %s created',c);
+	end loop;
 end
 $_$;
-
 select * from er.util_create_storage('er.data');
 
 create or replace function er.key(_key text, _domain text default null)
@@ -73,17 +78,19 @@ as $_$
 $_$;
 
 select er.key_new('хранилище домена','metadata');
-insert into er.data(r,value) values (er.key('хранилище домена','metadata'),'er.data');
+insert into er.data(r,t) values (er.key('хранилище домена','metadata'),'er.data');
 
 create view er.storages as
-select format('%I.%I',nspname,relname) as "table", array_agg_notnull(k.domain order by domain) as domains
+select format('%I.%I',nspname,relname) as "table", array_agg_notnull(k.domain order by domain) as domains,
+(select array_agg(attname order by attnum) from pg_attribute where attrelid=r.oid and attnum>0) as columns,
+(select array_agg(typname order by attnum) from pg_attribute a join pg_type t on t.oid=a.atttypid where attrelid=r.oid and attnum>0) as types
 from pg_class r
 join pg_namespace n on n.oid=r.relnamespace
 left join (
 er.keys k join er.data d on d.r=k.id 
-) on k.key='хранилище домена' and (d.value=format('%I.%I',nspname,relname) or d.value=format('%I',coalesce(nullif(nspname,'public')||'.','')||relname))
+) on k.key='хранилище домена' and (d.t=format('%I.%I',nspname,relname) or d.t=format('%I',coalesce(nullif(nspname,'public')||'.','')||relname))
 where r.relkind='r' and nspname not in ('pg_catalog','information_schema')
-and (select array_agg(attname order by attnum) from pg_attribute where attrelid=r.oid and attnum>0)='{row,e1,r,e2,value}'::name[]
-group by nspname, relname
+and (select array_agg(attname order by attnum) from pg_attribute where attrelid=r.oid and attnum>0 and attnum<4)='{row,e1,r}'::name[]
+group by r.oid, nspname, relname
 ;
 
