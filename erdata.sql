@@ -171,3 +171,23 @@ join er.keys k on k.id=ks.e1 or k.key like ks.t or k.key~ks.t
 ;
 left join er.data ks on ks.r=er.key('ключ определения') and (ks.e2=t.e1)   (ks.e2=t.e1 and ks.r=er.key('ключ определения')) or (ks.e1=t.e1 and ks.r=er.key('шаблон ключа'))
 
+create or replace function er.record_of(_en int8, _domain text default null)
+returns table("table" text, "row" int, e1 int8, name1 text, r int8, key text, domain text, e2 int8, name2 text, value text) language plpgsql as $_$
+declare
+	r record;
+	_domains text[];
+begin
+	_domains=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
+	return query execute $$
+	with d as (
+		$$||(select string_agg(format('select ''%s'' as "table","row",e1,r,e2,t from %s',s."table",s."table"),' union ') from er.storages s where array_intersect(_domains,s.domains)) ||$$
+	)
+	select d."table", d.row, d.e1, n1.t as name1,d.r,k.key, k.domain, d.e2, n2.t as name2, d.t
+	from d
+	left join d n1 on n1.e1=d.e1 and n1.r in (select keyid from er.naming) and not exists (select 1 from d where e1=n1.e1 and r=n1.r and length(t)<length(n1.t) and row<>n1.row)
+	left join d n2 on n2.e1=d.e2 and n2.r in (select keyid from er.naming) and not exists (select 1 from d where e1=n2.e1 and r=n2.r and length(t)<length(n2.t) and row<>n2.row)
+	left join er.keys k on k.id=d.r
+	where $1 in (d.e1,d.e2)
+	$$ using _en;
+end
+$_$;
