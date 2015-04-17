@@ -67,15 +67,28 @@ create aggregate longest(text) ( sfunc=longest_aggregate,stype=text );
 create or replace function array_agg_notnull_aggregator(a anyarray, b anyelement)
 returns anyarray language plpgsql immutable strict as $_$
 begin
-	if b is not null then
-		a=array_append(a,b);
-	end if;
+	a=array_append(a,b);
 	return a;
 end;
 $_$;
 
 drop aggregate if exists array_agg_notnull(anyelement) cascade;
 create aggregate array_agg_notnull(anyelement) ( sfunc=array_agg_notnull_aggregator,stype=anyarray, initcond='{}');
+
+select array_agg_uniq(unnest) from unnest(array['a','b','c','c','b',null,'a']::text[]);
+create or replace function array_agg_uniq(a anyarray, b anyelement)
+returns anyarray language plpgsql immutable strict as $_$
+begin
+	if b<>a[array_length(a,1)] or a='{}' then
+		a=array_append(a,b);
+	end if;
+	return a;
+end;
+$_$;
+
+drop aggregate if exists array_agg_uniq(anyelement) cascade;
+create aggregate array_agg_uniq(anyelement) ( sfunc=array_agg_uniq,stype=anyarray, initcond='{}');
+
 
 create or replace function array_intersection(a anyarray, b anyarray)
 returns anyarray language sql immutable

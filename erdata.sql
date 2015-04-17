@@ -171,6 +171,38 @@ join er.keys k on k.id=ks.e1 or k.key like ks.t or k.key~ks.t
 ;
 left join er.data ks on ks.r=er.key('ключ определения') and (ks.e2=t.e1)   (ks.e2=t.e1 and ks.r=er.key('ключ определения')) or (ks.e1=t.e1 and ks.r=er.key('шаблон ключа'))
 
+create or replace function er.entities(_id int8, _name text default null, _type text default null, _domain text default null)
+returns table(en int8, names text[], types text[], domains text[]) language plpgsql stable as $_$
+declare
+	_domains text[]:=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
+	en_filter text:=case when _id is not null then $$and case t.column when 'e1' then d.e1 when 'e2' then d.e2 end=$1$$ else '' end;
+	name_filter text:=case when _name is not null then $$and string_agg(d.t,'')~$2$$ else '' end;
+	type_filter text:=case when _type is not null then $$and $3=any(array_agg(type))$$ else '' end;
+	dom_filter text:=case when _domain is not null then $$and $4=any(array_agg(t.domain))$$ else '' end;
+begin
+	return query execute $$
+	with d as (
+		$$||(select string_agg(format('select ''%s'' as "table","row",e1,r,e2,t from %s',s."table",s."table"),' union ') from er.storages s where array_intersect(_domains,s.domains)) ||$$
+	)
+	select
+	case t.column when 'e1' then d.e1 when 'e2' then d.e2 end as en,
+	case when 'персона'=any(array_agg_notnull(distinct type)) then array_agg_uniq(d.t order by d.row desc) else array_agg_uniq(d.t order by length(d.t)) end as names,
+	array_agg_uniq(type order by typedef) as types, array_agg_uniq(t.domain order by t.domain) as domains
+	from d
+	left join er.typing t on t.keyid=d.r
+	left join er.naming n on n.keyid=d.r
+	where case t.column when 'e1' then d.e1 when 'e2' then d.e2 end is not null
+	$$||en_filter||$$
+	group by en
+	having true
+	$$||name_filter||$$
+	$$||type_filter||$$
+	$$||dom_filter||$$
+	order by 2 nulls last, en
+	$$ using _id,_name,_type,_domain;
+end
+$_$;
+
 create or replace function er.record_of(_en int8, _domain text default null)
 returns table("table" text, "row" int, e1 int8, name1 text, r int8, key text, domain text, e2 int8, name2 text, value text) language plpgsql as $_$
 declare
@@ -191,3 +223,4 @@ begin
 	$$ using _en;
 end
 $_$;
+
