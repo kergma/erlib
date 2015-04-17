@@ -87,7 +87,7 @@ select er.key_new('хранилище домена','metadata');
 insert into er.data(r,t) values (er.key('хранилище домена','metadata'),'er.data');
 
 create view er.storages as
-select format('%I.%I',nspname,relname) as "table", array_agg_notnull(k.domain order by domain) as domains,
+select format('%s%I',nullif(nspname,'public')||'.',relname) as "table", array_agg_uniq(k.domain order by domain) as domains,
 (select array_agg(attname order by attnum) from pg_attribute where attrelid=r.oid and attnum>0) as columns,
 (select array_agg(typname order by attnum) from pg_attribute a join pg_type t on t.oid=a.atttypid where attrelid=r.oid and attnum>0) as types
 from pg_class r
@@ -206,10 +206,8 @@ $_$;
 create or replace function er.record_of(_en int8, _domain text default null)
 returns table("table" text, "row" int, e1 int8, name1 text, r int8, key text, domain text, e2 int8, name2 text, value text) language plpgsql as $_$
 declare
-	r record;
-	_domains text[];
+	_domains text[]:=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
 begin
-	_domains=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
 	return query execute $$
 	with d as (
 		$$||(select string_agg(format('select ''%s'' as "table","row",e1,r,e2,t from %s',s."table",s."table"),' union ') from er.storages s where array_intersect(_domains,s.domains)) ||$$
