@@ -171,7 +171,7 @@ join er.keys k on k.id=ks.e1 or k.key like ks.t or k.key~ks.t
 ;
 left join er.data ks on ks.r=er.key('ключ определения') and (ks.e2=t.e1)   (ks.e2=t.e1 and ks.r=er.key('ключ определения')) or (ks.e1=t.e1 and ks.r=er.key('шаблон ключа'))
 
-create or replace function er.entities(_id int8, _name text default null, _type text default null, _domain text default null)
+create or replace function er.entities(_id int8, _name text default null, _type text default null, _domain text default null, _limit int default null)
 returns table(en int8, names text[], types text[], domains text[]) language plpgsql stable as $_$
 declare
 	_domains text[]:=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
@@ -199,6 +199,7 @@ begin
 	$$||type_filter||$$
 	$$||dom_filter||$$
 	order by 2 nulls last, en
+	$$||format('%s','limit '||_limit)||$$
 	$$ using _id,_name,_type,_domain;
 end
 $_$;
