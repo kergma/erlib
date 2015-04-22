@@ -176,7 +176,7 @@ returns table(en int8, names text[], types text[], domains text[]) language plpg
 declare
 	_domains text[]:=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
 	en_filter text:=case when _id is not null then $$and case t.column when 'e1' then d.e1 when 'e2' then d.e2 end=$1$$ else '' end;
-	name_filter text:=case when _name is not null then $$and string_agg(d.t,'')~$2$$ else '' end;
+	name_filter text:=case when _name is not null then $$and bool_or(d.t~*simple_regexp($2))$$ else '' end;
 	type_filter text:=case when _type is not null then $$and $3=any(array_agg(type))$$ else '' end;
 	dom_filter text:=case when _domain is not null then $$and $4=any(array_agg(t.domain))$$ else '' end;
 begin

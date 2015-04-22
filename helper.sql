@@ -75,7 +75,6 @@ $_$;
 drop aggregate if exists array_agg_notnull(anyelement) cascade;
 create aggregate array_agg_notnull(anyelement) ( sfunc=array_agg_notnull_aggregator,stype=anyarray, initcond='{}');
 
-select array_agg_uniq(unnest) from unnest(array['a','b','c','c','b',null,'a']::text[]);
 create or replace function array_agg_uniq(a anyarray, b anyelement)
 returns anyarray language plpgsql immutable strict as $_$
 begin
@@ -124,6 +123,26 @@ begin
 		return query select r.attname,(select indexrelid::regclass from pg_index where indrelid=_table and indkey=array[r.attnum]::int2vector),case when r.indexrelid is not null then 'already exists' else 'created' end;
 	end loop;
 end;
+$_$;
+
+select string_agg_uniq(unnest) from unnest(array['a','b','c','c','b',null,'a']::text[]);
+create or replace function string_agg_uniq(s text, b anyelement)
+returns text language plpgsql immutable strict as $_$
+begin
+	if b<>a[array_length(a,1)] or a='{}' then
+		a=array_append(a,b);
+	end if;
+	return a;
+end;
+$_$;
+
+drop aggregate if exists array_agg_uniq(anyelement) cascade;
+create aggregate array_agg_uniq(anyelement) ( sfunc=array_agg_uniq,stype=anyarray, initcond='{}');
+
+create or replace function simple_regexp(sre text)
+returns text language sql immutable
+as $_$
+	select regexp_replace(sre,' +','.*','g');
 $_$;
 
 commit;
