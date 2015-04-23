@@ -171,8 +171,10 @@ join er.keys k on k.id=ks.e1 or k.key like ks.t or k.key~ks.t
 ;
 left join er.data ks on ks.r=er.key('ключ определения') and (ks.e2=t.e1)   (ks.e2=t.e1 and ks.r=er.key('ключ определения')) or (ks.e1=t.e1 and ks.r=er.key('шаблон ключа'))
 
+create type er.entity as (en int8, names text[], types text[], domains text[]);
+
 create or replace function er.entities(_id int8, _name text default null, _type text default null, _domain text default null, _limit int default null)
-returns table(en int8, names text[], types text[], domains text[]) language plpgsql stable as $_$
+returns setof er.entity language plpgsql stable as $_$
 declare
 	_domains text[]:=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
 	en_filter text:=case when _id is not null then $$and case t.column when 'e1' then d.e1 when 'e2' then d.e2 end=$1$$ else '' end;
@@ -223,3 +225,22 @@ begin
 end
 $_$;
 
+create type er.row as ("column" text, type text, value text);
+
+create or replace function er.row(_table text, _row int)
+returns setof er.row language plpgsql
+as $_$
+declare
+	t record;
+	q text;
+begin
+	select * from er.storages where "table"=_table into strict t;
+	return query execute (
+	select format($$select (u).* from (select unnest(row('table',null,'%s')::er.row||array[%s]::er.row[]) u from %I where "row"=%s) u$$,
+		_table,
+		string_agg(format($$row('%s','%s', %I)$$,t.columns[i], t.types[i], t.columns[i]),', '),
+		_table,_row
+	) from generate_subscripts(t.columns,1) as i
+	);
+end
+$_$;
