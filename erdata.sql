@@ -30,7 +30,7 @@ begin
 	) u into r;
 
 	execute $$create table $$||_table||$$ (
-		row serial,
+		row serial primary key,
 		e1 int8,
 		r int8 references er.keys(id)
 		$$||format('%s',','||r.columns)||$$
@@ -228,19 +228,70 @@ $_$;
 create type er.row as ("column" text, type text, value text);
 
 create or replace function er.row(_table text, _row int)
-returns setof er.row language plpgsql
-as $_$
+returns setof er.row language plpgsql as $_$
 declare
 	t record;
 	q text;
 begin
 	select * from er.storages where "table"=_table into strict t;
 	return query execute (
-	select format($$select (u).* from (select unnest(row('table',null,'%s')::er.row||array[%s]::er.row[]) u from %I where "row"=%s) u$$,
+	select format($$select (u).* from (select unnest(row('table',null,'%s')::er.row||array[%s]::er.row[]) u from %s where "row"=%s::int) u$$,
 		_table,
 		string_agg(format($$row('%s','%s', %I)$$,t.columns[i], t.types[i], t.columns[i]),', '),
-		_table,_row
+		regexp_replace(_table,';','_','g'),quote_nullable(_row)
 	) from generate_subscripts(t.columns,1) as i
 	);
+end
+$_$;
+
+create or replace function er.chrow (_table text, _row int, _columns text[], _values text[])
+returns table("table" text, "row" int, action text) language plpgsql as $_$
+declare
+	a record;
+	r record;
+begin
+	with x as (
+	select * from unnest(_columns) with ordinality as col(c,o)
+	join unnest(_values) with ordinality as val(v,o) on val.o=col.o
+	),
+	tables as (
+	select *, coalesce(regexp_replace(dest,';','_'),'') as dest_name, coalesce(regexp_replace(src,';','_'),'') as src_name from (select (select v from x where c='table') as dest, _table as src) s
+	),
+	types as (
+	select s."table", (u).* from tables, er.storages s,unnest(columns,types) with ordinality as u("column",type,o) where s."table" in (src,dest)
+	),
+	m as (
+	select format('insert into %s (%s) ',(select dest_name from tables),string_agg(format('%I',"column"),', '))||
+	format ('select %s from %s where "row"=$1',string_agg(format('%s::%s',case when exists (select 1 from x where c="column") then (select quote_nullable(v) from x where c="column") else quote_ident("column") end,type),', '),(select src_name from tables))||
+	' returning *' as _copy,
+	format ('delete from %s where "row"=$1 returning *',(select src_name from tables)) as _delete
+	from types t,tables where t."table"=src and exists (select 1 from types t2 where t2."table"=dest and t2."column"=t."column")
+	and case when exists (select 1 from x where c='row') then true else "column"<>'row' end
+	),
+	u as (
+	select format ('update %s set %s where "row"=$1 returning *',(select dest_name from tables),string_agg(format('%I=%L::%s',x.c,x.v,type),', ')) as _update,
+	format ('insert into %s (%s) values ( %s ) returning *',(select dest_name from tables),string_agg(format('%I',x.c),', '),string_agg(format('%L::%s',x.v,type),', ')) as _insert
+	from tables,x,types where x.c=types."column" and types."table"=tables.dest
+	)
+	select * from tables,m,u
+	into a;
+	if a.src<>a.dest then
+		execute a._copy using _row into r;
+		if r.row is null then return query select a.src,_row,'does not exist'::text; return; end if;
+		return query select a.dest,r.row,'inserted with update'::text;
+	end if;
+	if a.src<>a.dest or a.dest is null then
+		execute a._delete using _row into r;
+		if r.row is null then return query select a.src,_row,'does not exist'::text; return; end if;
+		return query select a.src,_row,'deleted'::text;
+	end if;
+	if a.src is null then
+		execute a._insert using _row into r;
+		return query select a.dest,r.row,'inserted'::text;
+	end if;
+	if a.src=a.dest then
+		execute a._update using _row into r;
+		return query select a.dest,_row,case when r.row is null then 'does not exist' else 'updated' end::text;
+	end if;
 end
 $_$;
