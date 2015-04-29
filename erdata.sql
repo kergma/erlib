@@ -275,7 +275,7 @@ begin
 	)
 	select * from tables,m,u
 	into a;
-	if a.src<>a.dest then
+	if a.src<>a.dest and _row is not null then
 		execute a._copy using _row into r;
 		if r.row is null then return query select a.src,_row,'does not exist'::text; return; end if;
 		return query select a.dest,r.row,'inserted with update'::text;
@@ -285,11 +285,11 @@ begin
 		if r.row is null then return query select a.src,_row,'does not exist'::text; return; end if;
 		return query select a.src,_row,'deleted'::text;
 	end if;
-	if a.src is null then
+	if a.src is null or _row is null then
 		execute a._insert using _row into r;
 		return query select a.dest,r.row,'inserted'::text;
 	end if;
-	if a.src=a.dest then
+	if a.src=a.dest and _row is not null then
 		execute a._update using _row into r;
 		return query select a.dest,_row,case when r.row is null then 'does not exist' else 'updated' end::text;
 	end if;
