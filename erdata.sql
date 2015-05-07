@@ -169,7 +169,6 @@ from er.data n
 join er.data ks on ks.r=er.key('ключ именования') and n.e1 in (ks.e1, ks.e2)
 join er.keys k on k.id=ks.e1 or k.key like ks.t or k.key~ks.t
 ;
-left join er.data ks on ks.r=er.key('ключ определения') and (ks.e2=t.e1)   (ks.e2=t.e1 and ks.r=er.key('ключ определения')) or (ks.e1=t.e1 and ks.r=er.key('шаблон ключа'))
 
 create type er.entity as (en int8, names text[], types text[], domains text[]);
 
