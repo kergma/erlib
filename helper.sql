@@ -89,6 +89,11 @@ drop aggregate if exists array_agg_uniq(anyelement) cascade;
 create aggregate array_agg_uniq(anyelement) ( sfunc=array_agg_uniq,stype=anyarray, initcond='{}');
 
 
+create or replace function array_negate(_in int8[])
+returns int8[] language sql as $_$
+	select array_agg(-unnest) from unnest(_in);
+$_$;
+
 create or replace function array_intersection(a anyarray, b anyarray)
 returns anyarray language sql immutable
 as $_$

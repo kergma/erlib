@@ -294,3 +294,33 @@ begin
 	end if;
 end
 $_$;
+
+create or replace function er.tree_from(_root int8, _relations int8[], _reverse boolean default false, _depth int default null, _floor int default 0, _domain text default null)
+returns table(path int8[], r int8, leaf boolean) as
+$_$
+declare
+	_domains text[]:=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
+	depth_check varchar:='';
+	floor_check varchar:='';
+	abs int8[];
+begin
+	select array_agg(abs(unnest)) from unnest(_relations) into abs;
+	if _reverse then
+		select array_agg(-unnest) from unnest(_relations) into _relations;
+	end if;
+	if _depth is not null then depth_check:=' and array_length(r.p,1)-2<'||_depth; end if;
+	if _floor<>0 then floor_check:=' and array_length(r.p,1)-1>='||_floor; end if;
+	return query execute $$
+		with recursive r(p,r,c) as (
+			select array[$1],null::int8,false
+			union
+			select p||array[case when -d.r=any($2) then d.e2 else d.e1 end],d.r,case when -d.r=any($2) then d.e2 else d.e1 end=any(p)
+			from ($$||(select string_agg(format('select ''%s'' as "table","row",e1,r,e2,t from %s',s."table",s."table"),' union ') from er.storages s where array_intersect(_domains,s.domains))||$$) d
+			join r on r.p[array_length(r.p,1)]=case when -d.r=any($2) then d.e1 else d.e2 end and d.r = any($3)
+			where not c $$||depth_check||$$
+		) select r.p,r.r,not exists (select 1 from r z where p[1:array_length(p,1)-1]=r.p) from r
+		where true $$||floor_check||depth_check
+	using _root,_relations,abs;
+end
+$_$ language plpgsql stable;
+
