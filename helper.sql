@@ -106,6 +106,16 @@ as $_$
 	select exists (select 1 from unnest(a) as x(a) where a=any(b));
 $_$;
 
+create or replace function array_reverse(a anyarray)
+returns anyarray language 'sql' strict immutable
+as $_$
+	select array(
+	select a[i]
+	from generate_subscripts(a,1) as s(i)
+	order by i desc
+	);
+$_$;
+
 create or replace function create_indexes(_table regclass, _want text default '%')
 returns table(attname name, index_name regclass, status text) language plpgsql volatile as $_$
 declare
