@@ -116,6 +116,21 @@ as $_$
 	);
 $_$;
 
+create or replace function unnest_md(anyarray)
+returns setof anyarray language plpgsql immutable as $_$
+declare
+	s $1%type;
+begin
+	foreach s slice 1 in array $1 loop
+		return next s;
+	end loop;
+	return;
+end
+$_$;
+
+drop aggregate if exists array_agg_md(text[]) cascade;
+create aggregate array_agg_md(anyarray) ( sfunc=array_cat,stype=anyarray, initcond='{}');
+
 create or replace function create_indexes(_table regclass, _want text default '%')
 returns table(attname name, index_name regclass, status text) language plpgsql volatile as $_$
 declare
