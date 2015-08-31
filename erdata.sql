@@ -176,6 +176,12 @@ left join er.data o on o.e1=n.e1 and o.r=er.key('порядок именован
 
 create type er.entity as (en int8, names text[], types text[], domains text[]);
 
+create or replace function er.names_selector()
+returns text language sql immutable
+as $_$
+	select $$case when 'earliest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by d.row) when 'latest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by d.row desc) when 'shortest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by length(d.t)) when 'longest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by length(d.t) desc) else array_agg(d.t) end$$::text;
+$_$;
+
 create or replace function er.entities(_id int8, _name text default null, _type text default null, _domain text default null, _limit int default null)
 returns setof er.entity language plpgsql stable as $_$
 declare
@@ -191,7 +197,7 @@ begin
 	)
 	select
 	case when t.column='e1' then d.e1 when t.column='e2' then d.e2 when n.namedef is not null then d.e1  end as en,
-	case when 'earliest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by d.row) when 'latest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by d.row desc) when 'shortest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by length(d.t)) when 'longest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by length(d.t) desc) else array_agg(d.t) end as names,
+	$$||er.names_selector()||$$ as names,
 	array_agg_uniq(type order by typedef) as types, array_agg_uniq(t.domain order by t.domain) as domains
 	from d
 	left join er.typing t on t.keyid=d.r
@@ -325,6 +331,31 @@ begin
 		) select r.p,r.r,not exists (select 1 from r z where p[1:array_length(p,1)-1]=r.p) from r
 		where true $$||floor_check||depth_check
 	using _root,_relations,abs;
+end
+$_$ language plpgsql stable;
+
+create or replace function er.roots(_relations int8[], _domain text default null)
+returns table(root int8, names text[]) as
+$_$
+declare
+	_domains text[]:=coalesce(regexp_split_to_array(_domain,E',\\s*'),(select array_agg(distinct unnest) from (select unnest(s.domains) from er.storages s) s))||'{metadata}';
+	abs int8[];
+begin
+	select array_agg(abs(unnest)) from unnest(_relations) into abs;
+	return query execute $$
+		with d as (
+			$$||(select string_agg(format('select ''%s'' as "table","row",e1,r,e2,t from %s',s."table",s."table"),' union ') from er.storages s where array_intersect(_domains,s.domains))||$$
+		)
+		select d.e1, $$||er.names_selector()||$$
+		from d
+		join er.typing t on t.keyid=d.r
+		left join er.naming n on n.keyid=d.r
+		where true
+		and not exists (select 1 from d d1 where d1.e1=d.e1 and r=any($1))
+		and exists (select 1 from d d2 where d2.e2=d.e1 and r=any($1))
+		group by  d.e1
+		$$
+	using _relations,abs;
 end
 $_$ language plpgsql stable;
 
