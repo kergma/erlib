@@ -125,22 +125,24 @@ begin
 end
 $_$;
 
-create or replace function er.namedef(_keys int8[], _id int8 default null)
+create or replace function er.namedef(_keys int8[], _ordering text, _id int8 default null)
 returns int8 language plpgsql as $_$
 declare
 	id int8:=coalesce(_id,generate_id());
 begin
 	insert into er.data (e1,r,e2) select unnest, er.key('ключ именования'), id from unnest(_keys);
+	insert into er.data (e1,r,t) select id, er.key('порядок именования'), _ordering where _ordering is not null;
 	return id;
 end
 $_$;
 
-create or replace function er.namedef(_key_template text, _id int8 default null)
+create or replace function er.namedef(_key_template text, _ordering text, _id int8 default null)
 returns int8 language plpgsql as $_$
 declare
 	id int8:=coalesce(_id,generate_id());
 begin
 	insert into er.data (e1,r,t) select id, er.key('ключ именования'), _key_template;
+	insert into er.data (e1,r,t) select id, er.key('порядок именования'), _ordering where _ordering is not null;
 	return id;
 end
 $_$;
@@ -150,6 +152,7 @@ select er.key_new('определяющее поле','metadata');
 select er.key_new('определяемый тип','metadata');
 select er.key_new('ключ определения','metadata');
 select er.key_new('ключ именования','metadata');
+select er.key_new('порядок именования','metadata');
 
 select * from er.typedef('e1',er.keys('определяемый тип','metadata'),'определение');
 select * from er.typedef('e1',er.keys('ключ именования','metadata'),'именование');
@@ -164,10 +167,11 @@ where t.r=er.key('определяемый тип')
 ;
 
 create view er.naming as
-select k.id as keyid, k.key, k.domain, n.e1 as namedef
+select k.id as keyid, k.key, k.domain, n.e1 as namedef,o.t as ordering
 from er.data n
 join er.data ks on ks.r=er.key('ключ именования') and n.e1 in (ks.e1, ks.e2)
 join er.keys k on k.id=ks.e1 or k.key like ks.t or k.key~ks.t
+left join er.data o on o.e1=n.e1 and o.r=er.key('порядок именования')
 ;
 
 create type er.entity as (en int8, names text[], types text[], domains text[]);
@@ -187,7 +191,7 @@ begin
 	)
 	select
 	case when t.column='e1' then d.e1 when t.column='e2' then d.e2 when n.namedef is not null then d.e1  end as en,
-	case when 'персона'=any(array_agg_notnull(distinct type)) then array_agg_uniq(d.t order by d.row desc) else array_agg_uniq(d.t order by length(d.t)) end as names,
+	case when 'earliest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by d.row) when 'latest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by d.row desc) when 'shortest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by length(d.t)) when 'longest'=any(array_agg(n.ordering)) then array_agg_uniq(d.t order by length(d.t) desc) else array_agg(d.t) end as names,
 	array_agg_uniq(type order by typedef) as types, array_agg_uniq(t.domain order by t.domain) as domains
 	from d
 	left join er.typing t on t.keyid=d.r
