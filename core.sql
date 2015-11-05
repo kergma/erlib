@@ -68,7 +68,12 @@ select * from er.util_create_storage('er.data');
 create or replace function er.key(_key text, _domain text default null)
 returns int8 language sql stable
 as $$
-	select (select id from er.keys where key like _key and domain like coalesce(_domain,'%'))
+	select (
+	select id from (
+	select case when _domain is null then regexp_replace(_key,E'\\s*,.*$','') else _key end as key, coalesce(_domain,nullif(regexp_replace(_key,E'^.*,\\s*',''),_key)) as domain
+	) s
+	join er.keys k on (k.key like s.key or k.id::text=s.key) and k.domain like coalesce(s.domain,'%')
+	)
 $$;
 
 create or replace function er.key(_id int8)
@@ -80,19 +85,30 @@ $$;
 create or replace function er.keys_like(_key text, _domain text default null)
 returns setof int8 language sql stable
 as $$
-	select id from er.keys where key like _key and domain like coalesce(_domain,'%')
+	select id from (
+	select case when _domain is null then regexp_replace(_key,E'\\s*,.*$','') else _key end as key, coalesce(_domain,nullif(regexp_replace(_key,E'^.*,\\s*',''),_key)) as domain
+	) s
+	join er.keys k on (k.key like s.key or k.id::text=s.key) and k.domain like coalesce(s.domain,'%')
 $$;
 
 create or replace function er.keys(_key text, _domain text default null)
 returns int8[] language sql stable
 as $$
-	select array_agg(id) from er.keys where key like _key and domain like coalesce(_domain,'%')
+	select array_agg(id) from (
+	select case when _domain is null then regexp_replace(_key,E'\\s*,.*$','') else _key end as key, coalesce(_domain,nullif(regexp_replace(_key,E'^.*,\\s*',''),_key)) as domain
+	) s
+	join er.keys k on (k.key like s.key or k.id::text=s.key) and k.domain like coalesce(s.domain,'%')
 $$;
 
 create or replace function er.keys(_keys text[], _domain text default null)
 returns int8[] language sql stable
 as $$
-	select array_agg(k.id) from unnest(_keys) as u join er.keys k on k.key like u and domain like coalesce(_domain,'%');
+	select array_agg(k.id) from (
+	select case when _domain is null then regexp_replace(_key,E'\\s*,.*$','') else _key end as key, coalesce(_domain,nullif(regexp_replace(_key,E'^.*,\\s*',''),_key)) as domain
+	from (select _key,_domain from unnest(_keys) as _key) s
+	) s
+	join er.keys k on (k.key like s.key or k.id::text=s.key) and k.domain like coalesce(s.domain,'%')
+	;
 $$;
 
 create or replace function er.key_new(_key text, _domain text)
