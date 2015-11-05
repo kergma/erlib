@@ -176,7 +176,7 @@ begin
 			join r on r.p[array_length(r.p,1)]=case when -d.r=any($2) then d.e1 else d.e2 end and d.r = any($3)
 			where not c $$||depth_check||$$
 		) select r.p,r.r,not exists (select 1 from r z where p[1:array_length(p,1)-1]=r.p) from r
-		where true $$||floor_check||depth_check
+		where p<>'{null}' $$||floor_check||depth_check
 	using _root,_relations,abs;
 end
 $_$ language plpgsql stable;
