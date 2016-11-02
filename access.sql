@@ -21,6 +21,23 @@ along with erlib.  If not, see <http://www.gnu.org/licenses/>.
 -- entity access
 create type er.entity as (en int8, names text[], types text[], domains text[]);
 
+create type er.name_agg_stype as (t text, "row" int, ordering text);
+create or replace function er.name_aggregator(s er.name_agg_stype[], _t text, _row int, _ordering text)
+returns er.name_agg_stype[] language plpgsql strict volatile as $_$
+begin
+	if (_t,_row,_ordering)=any(s) then return s; end if;
+	s=s||(_t,_row,_ordering)::er.name_agg_stype;
+	return s;
+end;
+$_$;
+create or replace function er.name_aggregator_fin(s er.name_agg_stype[])
+returns text[] language sql volatile as
+$_$
+	select array_agg(u.t order by case s[1].ordering when 'earliest' then u."row" when 'latest' then -u."row" when 'longest' then -length(u.t) when 'shortest' then length(u.t) else null end ) from unnest(s) as u;
+$_$;
+drop aggregate if exists er.name_agg(text,int,text) cascade;
+create aggregate er.name_agg(text,int,text) ( sfunc=er.name_aggregator,stype=er.name_agg_stype[], initcond='{}',finalfunc=er.name_aggregator_fin );
+
 create or replace function er.names_selector()
 returns text language sql immutable
 as $_$
