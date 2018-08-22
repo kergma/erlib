@@ -137,7 +137,7 @@ begin
 		execute 'select a.attname,a.attnum,i.*
 		from pg_class c
 		join pg_attribute a on a.attrelid=c.oid and not a.attisdropped
-		left join pg_index i on i.indrelid=c.oid and i.indkey=array[a.attnum]::int2vector
+		left join pg_index i on i.indrelid=c.oid and cardinality(i.indkey)=1 and i.indkey[0]=a.attnum
 		where c.oid=$1 and a.attnum>0 and '||_want||'
 		order by a.attnum
 		' using _table
@@ -145,7 +145,7 @@ begin
 		if r.indexrelid is null then
 			execute format('create index on %s (%I)',_table,r.attname);
 		end if;
-		return query select r.attname,(select indexrelid::regclass from pg_index where indrelid=_table and indkey=array[r.attnum]::int2vector),case when r.indexrelid is not null then 'already exists' else 'created' end;
+		return query select r.attname,(select indexrelid::regclass from pg_index where indrelid=_table and cardinality(indkey)=1 and indkey[0]=r.attnum),case when r.indexrelid is not null then 'already exists' else 'created' end;
 	end loop;
 end;
 $_$;
